@@ -1,0 +1,14 @@
+menu "RetroPLC runtime"
+
+config RETROPLC_MGMT_MAX_LOCATED_VARS
+	int "Maximum located variables in an MCUmgr scan snapshot"
+	range 1 128
+	default 64
+	help
+	  Maximum number of located-variable values captured at the end of each
+	  PLC scan and returned by MCUmgr group 64, command 0. The response reports
+	  truncation when the generated program contains more entries.
+
+endmenu
+
+source "Kconfig.zephyr"

@@ -1,0 +1,8 @@
+/* Keep MCUboot's flash map identical to the main application. */
+#include "../boards/arduino_opta_stm32h747xx_m7.overlay"
+
+/ {
+	chosen {
+		zephyr,code-partition = &boot_partition;
+	};
+};

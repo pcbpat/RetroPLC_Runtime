@@ -1,0 +1,24 @@
+/*
+ * MCUboot swap-using-offset requires identical erase-sector layouts in both
+ * slots. Extend the M7 flash device over both 1 MiB banks and give the M7
+ * image pair two equal 512 KiB slots.
+ *
+ * The final 768 KiB is intentionally left unpartitioned for a future M4 image
+ * pair. M4 updating is not enabled yet.
+ */
+&flash0 {
+	reg = <0x08000000 DT_SIZE_M(2)>;
+	ranges = <0 0x08000000 DT_SIZE_M(2)>;
+
+	partitions {
+		slot1_partition: partition@c0000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-1";
+			reg = <0x000c0000 DT_SIZE_K(512)>;
+		};
+	};
+};
+
+&slot0_partition {
+	reg = <0x00040000 DT_SIZE_K(512)>;
+};
