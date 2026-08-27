@@ -8,7 +8,17 @@ manifest:
       remote: zephyrproject-rtos
       # Pin the platform to the Zephyr revision currently validated by RetroPLC.
       revision: da0718ca0d52d4f3e3653ead4f8d3a907778ae0b
-      import: true
+      # Import only the modules used by the Opta runtime instead of every
+      # Zephyr HAL and BSP repository.
+      import:
+        name-allowlist:
+          - cmsis_6
+          - hal_stm32
+          - hal_infineon
+          - mcuboot
+          - mbedtls
+          - tf-psa-crypto
+          - zcbor
 
   self:
     path: retroplc-runtime
