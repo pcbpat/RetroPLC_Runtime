@@ -1,3 +1,13 @@
+#ifdef RETROPLC_HAS_GENERATED_DEBUG
+#include RETROPLC_GENERATED_HEADER
+#include "strucpp-runtime/debug_dispatch.hpp"
+
+#include <array>
+#include <type_traits>
+
+extern strucpp::RETROPLC_CONFIGURATION_CLASS g_config;
+#endif
+
 #include "plc_mgmt.hpp"
 
 #include <zephyr/kernel.h>
@@ -20,11 +30,11 @@ namespace {
 
 constexpr uint16_t kPlcMgmtGroupId = MGMT_GROUP_ID_PERUSER;
 constexpr uint8_t kSnapshotCommandId = 0;
+constexpr uint8_t kDebugCommandId = 1;
 constexpr uint32_t kDefaultWaitMs = 5000;
 constexpr uint32_t kMaximumWaitMs = 30000;
-constexpr uint8_t kAfterKey[] = {'a', 'f', 't', 'e', 'r'};
-constexpr uint8_t kTimeoutMsKey[] = {'t', 'i', 'm', 'e', 'o',
-                                     'u', 't', '_', 'm', 's'};
+constexpr uint8_t kAfterKey[] = "after";
+constexpr uint8_t kTimeoutMsKey[] = "timeout_ms";
 
 struct SnapshotValue {
   strucpp::LocatedArea area;
@@ -173,10 +183,207 @@ int snapshot_read(struct smp_streamer *ctxt) {
   return ok ? MGMT_ERR_EOK : MGMT_ERR_EMSGSIZE;
 }
 
+#ifdef RETROPLC_HAS_GENERATED_DEBUG
+namespace debug = strucpp::debug;
+constexpr uint8_t kDebugArray = 0;
+constexpr uint32_t kMaxDebugEntries = CONFIG_RETROPLC_MGMT_MAX_DEBUG_ENTRIES;
+constexpr uint32_t kMaxDebugValueSize = CONFIG_RETROPLC_MGMT_MAX_DEBUG_VALUE_SIZE;
+constexpr uint32_t kDefaultDebugLimit = std::min(8U, kMaxDebugEntries);
+
+template <debug::TypeTag Tag, typename Storage>
+struct DebugScalarMatches : std::false_type {};
+
+template <debug::TypeTag Tag, typename T>
+struct DebugScalarMatches<Tag, strucpp::IECVar<T>>
+    : std::bool_constant<debug::type_ops[Tag].read == &debug::read_impl<T>> {};
+
+template <debug::TypeTag Tag, typename T>
+constexpr bool debug_storage_matches() {
+  using Storage = std::remove_const_t<std::remove_reference_t<T>>;
+  if constexpr (Tag == debug::TAG_STRING) {
+    return std::is_same_v<Storage, strucpp::IECStringVar<254>>;
+  } else if constexpr (Tag == debug::TAG_WSTRING) {
+    return std::is_same_v<Storage, strucpp::IECWStringVar<254>>;
+  } else {
+    return DebugScalarMatches<Tag, Storage>::value;
+  }
+}
+
+namespace debug_storage {
+using namespace strucpp; // Generated global variable expressions use this scope.
+#include "debug_storage_checks.inc"
+} // namespace debug_storage
+
+enum class DebugStatus : uint8_t { Ok, InvalidEntry, Unsupported, TooLarge };
+
+struct DebugValue {
+  uint16_t size;
+  uint8_t tag;
+  DebugStatus status;
+  uint8_t data[kMaxDebugValueSize];
+};
+
+struct DebugPage {
+  uint32_t generation;
+  uint32_t offset;
+  uint32_t count;
+  DebugValue values[kMaxDebugEntries];
+};
+
+DebugPage debug_page{};
+K_MUTEX_DEFINE(debug_page_mutex);
+K_SEM_DEFINE(debug_page_ready, 0, 1);
+// Pending: the scan thread may populate the page. Busy: a handler owns
+// the request through encoding, including after the page becomes ready.
+bool debug_page_pending = false;
+bool debug_page_busy = false;
+
+void capture_debug_value(uint16_t index, DebugValue &value) {
+  const debug::Entry entry = debug::read_entry(kDebugArray, index);
+  value.tag = entry.tag;
+  value.size = 0;
+  value.status = DebugStatus::InvalidEntry;
+  if (!entry.ptr || entry.tag >= debug::TAG__COUNT) {
+    return;
+  }
+
+  value.status = DebugStatus::Unsupported;
+  if (!debug_storage::debug_storage_valid[index]) {
+    return;
+  }
+  const uint16_t size = debug::handle_size(kDebugArray, index);
+  if (size == 0) {
+    return;
+  }
+  if (size > sizeof(value.data)) {
+    value.status = DebugStatus::TooLarge;
+    return;
+  }
+  if (debug::handle_read(kDebugArray, index, value.data) == size) {
+    value.size = size;
+    value.status = DebugStatus::Ok;
+  }
+}
+
+bool encode_debug_value(zcbor_state_t *zse, uint32_t id,
+                        const DebugValue &value) {
+  const bool ok = zcbor_map_start_encode(zse, 3) &&
+                  zcbor_tstr_put_lit(zse, "id") && zcbor_uint32_put(zse, id) &&
+                  zcbor_tstr_put_lit(zse, "type") &&
+                  zcbor_uint32_put(zse, value.tag);
+  if (value.status == DebugStatus::Ok) {
+    const zcbor_string data{value.data, value.size};
+    return ok && zcbor_tstr_put_lit(zse, "data") &&
+           zcbor_bstr_encode(zse, &data) && zcbor_map_end_encode(zse, 3);
+  }
+  return ok && zcbor_tstr_put_lit(zse, "status") &&
+         zcbor_uint32_put(zse, static_cast<uint8_t>(value.status)) &&
+         zcbor_map_end_encode(zse, 3);
+}
+
+int debug_read(struct smp_streamer *ctxt) {
+  constexpr uint8_t offset_key[] = "offset";
+  constexpr uint8_t limit_key[] = "limit";
+  uint32_t offset = 0;
+  uint32_t limit = kDefaultDebugLimit;
+  size_t decoded = 0;
+  struct zcbor_map_decode_key_val request_decode[] = {
+      ZCBOR_MAP_DECODE_KEY_DECODER(offset_key, zcbor_uint32_decode, &offset),
+      ZCBOR_MAP_DECODE_KEY_DECODER(limit_key, zcbor_uint32_decode, &limit),
+  };
+  if (zcbor_map_decode_bulk(ctxt->reader->zs, request_decode,
+                            ARRAY_SIZE(request_decode), &decoded) != 0 ||
+      limit == 0 || limit > kMaxDebugEntries) {
+    return MGMT_ERR_EINVAL;
+  }
+  if (debug::handle_array_count() == 0) {
+    return MGMT_ERR_ENOENT;
+  }
+  // The count and storage checks are immutable generated metadata.
+  const uint32_t total = debug::handle_elem_count(kDebugArray);
+  if (total != debug_storage::debug_storage_valid.size()) {
+    return MGMT_ERR_ECORRUPT;
+  }
+  if (offset > total) {
+    return MGMT_ERR_EINVAL;
+  }
+
+  zcbor_state_t *zse = ctxt->writer->zs;
+  // Upper bounds for either CBOR container mode: 64 bytes for the outer
+  // map, keys, five uint32s and list framing, 32 for each record's map,
+  // keys, ID, tag and byte-string length (or status).
+  constexpr size_t envelope_bytes = 64;
+  constexpr size_t record_overhead = 32;
+  constexpr size_t smp_header_bytes = 8;
+  const size_t capacity = std::min<size_t>(
+      zse->payload_end - zse->payload,
+      CONFIG_MCUMGR_TRANSPORT_UART_MTU > smp_header_bytes
+          ? CONFIG_MCUMGR_TRANSPORT_UART_MTU - smp_header_bytes
+          : 0);
+  if (capacity < envelope_bytes) {
+    return MGMT_ERR_EMSGSIZE;
+  }
+  const uint32_t page_capacity =
+      (capacity - envelope_bytes) / (record_overhead + kMaxDebugValueSize);
+  const uint32_t count = std::min({limit, total - offset, page_capacity});
+  if (count == 0 && offset < total) {
+    return MGMT_ERR_EMSGSIZE;
+  }
+
+  k_mutex_lock(&debug_page_mutex, K_FOREVER);
+  if (debug_page_busy) {
+    k_mutex_unlock(&debug_page_mutex);
+    return MGMT_ERR_EBUSY;
+  }
+  k_sem_reset(&debug_page_ready);
+  debug_page_busy = true;
+  debug_page_pending = true;
+  debug_page.offset = offset;
+  debug_page.count = count;
+  k_mutex_unlock(&debug_page_mutex);
+
+  k_sem_take(&debug_page_ready, K_MSEC(kDefaultWaitMs));
+  k_mutex_lock(&debug_page_mutex, K_FOREVER);
+  const bool ready = !debug_page_pending;
+  debug_page_pending = false;
+  k_mutex_unlock(&debug_page_mutex);
+
+  int result = MGMT_ERR_ETIMEOUT;
+  if (ready) {
+    bool ok = zcbor_tstr_put_lit(zse, "scan") &&
+              zcbor_uint32_put(zse, debug_page.generation) &&
+              zcbor_tstr_put_lit(zse, "total") && zcbor_uint32_put(zse, total) &&
+              zcbor_tstr_put_lit(zse, "offset") && zcbor_uint32_put(zse, offset) &&
+              zcbor_tstr_put_lit(zse, "count") && zcbor_uint32_put(zse, count) &&
+              zcbor_tstr_put_lit(zse, "next") &&
+              zcbor_uint32_put(zse, offset + count) &&
+              zcbor_tstr_put_lit(zse, "vars") &&
+              zcbor_list_start_encode(zse, count);
+    for (uint32_t index = 0; ok && index < count; ++index) {
+      ok = encode_debug_value(zse, offset + index, debug_page.values[index]);
+    }
+    ok = ok && zcbor_list_end_encode(zse, count);
+    result = ok ? MGMT_ERR_EOK : MGMT_ERR_EMSGSIZE;
+  }
+
+  k_mutex_lock(&debug_page_mutex, K_FOREVER);
+  debug_page_busy = false;
+  k_mutex_unlock(&debug_page_mutex);
+  return result;
+}
+#else
+int debug_read(struct smp_streamer *) { return MGMT_ERR_ENOENT; }
+#endif
+
 const struct mgmt_handler plc_mgmt_handlers[] = {
     [kSnapshotCommandId] =
         {
             .mh_read = snapshot_read,
+            .mh_write = nullptr,
+        },
+    [kDebugCommandId] =
+        {
+            .mh_read = debug_read,
             .mh_write = nullptr,
         },
 };
@@ -223,4 +430,22 @@ void plc_mgmt_publish_scan(const strucpp::LocatedVar *located_vars,
   k_mutex_unlock(&snapshot_mutex);
 
   k_sem_give(&scan_completed);
+}
+
+void plc_mgmt_publish_debug_snapshot() {
+#ifdef RETROPLC_HAS_GENERATED_DEBUG
+  // A request racing this boundary can be picked up at the following one.
+  if (k_mutex_lock(&debug_page_mutex, K_NO_WAIT) != 0) {
+    return;
+  }
+  if (debug_page_pending) {
+    debug_page.generation = static_cast<uint32_t>(atomic_get(&scan_generation));
+    for (uint32_t index = 0; index < debug_page.count; ++index) {
+      capture_debug_value(debug_page.offset + index, debug_page.values[index]);
+    }
+    debug_page_pending = false;
+    k_sem_give(&debug_page_ready);
+  }
+  k_mutex_unlock(&debug_page_mutex);
+#endif
 }

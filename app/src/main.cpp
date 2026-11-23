@@ -1,5 +1,8 @@
 #ifdef RETROPLC_HAS_GENERATED_PROGRAM
 #include RETROPLC_GENERATED_HEADER
+
+// generated_debug.cpp declares this object in the global namespace.
+strucpp::RETROPLC_CONFIGURATION_CLASS g_config;
 #endif
 
 #include "plc_mgmt.hpp"
@@ -74,12 +77,11 @@ int main() {
     return 0;
   }
 
-  static strucpp::RETROPLC_CONFIGURATION_CLASS configuration;
-  if (configuration.get_resource_count() == 0) {
+  if (g_config.get_resource_count() == 0) {
     return 0;
   }
 
-  strucpp::ResourceInstance &resource = configuration.get_resources()[0];
+  strucpp::ResourceInstance &resource = g_config.get_resources()[0];
   if (resource.task_count == 0 || resource.tasks[0].interval_ns <= 0) {
     return 0;
   }
@@ -100,6 +102,7 @@ int main() {
     }
 
     plc_mgmt_publish_scan(strucpp::locatedVars, strucpp::locatedVarsCount);
+    plc_mgmt_publish_debug_snapshot();
 
     k_sleep(K_NSEC(task.interval_ns));
   }

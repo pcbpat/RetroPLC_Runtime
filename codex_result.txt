@@ -1,0 +1,30 @@
+RetroPLC Runtime — STruC++ debug array 0 over MCUmgr SMP
+
+Modified files
+- README.md
+- app/CMakeLists.txt, app/debug_storage_checks.cmake, app/Kconfig
+- app/src/main.cpp, app/src/plc_mgmt.cpp, app/src/plc_mgmt.hpp
+- app/src/strucpp-runtime/iec_array.hpp and iec_struct.hpp
+- codex_result.txt
+
+Generated table and configuration
+The existing source glob compiles generated_debug.cpp directly from RETROPLC_GENERATED_DIR. The scan executes the generated programs through the same external ::g_config referenced by the debug table. CMake checks that the generated declaration matches RETROPLC_CONFIGURATION_CLASS. Zephyr's initialization array contains the global constructor, and the Opta ELF links one g_config plus the dispatch tables. PLC builds without generated_debug.cpp warn at configure time and return ENOENT for command 1.
+
+STruC++ ABI
+All bundled runtime headers match BuildHost's STruC++ v0.6.3 submodule commit 80481d1c4c14c58da3a08f2fa00e7990f20a35ce byte-for-byte after synchronizing iec_array.hpp and iec_struct.hpp. The debug table, dispatch, IECVar and string headers already matched. This revision uses Entry{ptr, tag, _pad}, with no debug entry flags for read-only or retain. Its string operations are in debug_dispatch.hpp. Existing license notices are preserved. The generator, submodule and generated C++ were left intact.
+
+SMP protocol
+Group 64 command 1 accepts a CBOR map with unsigned offset (default 0) and limit (default 8, capped by configuration). The reply contains scan, total, offset, count, next and vars. Each record has id, type and data (a CBOR byte string), or id, type and numeric status (1 invalid entry, 2 unsupported, 3 oversized). Use next until next equals total. IDs match elemIdx for arrayIdx 0. No names or addresses are transmitted. Command 0 retains the located-variable response and now recognizes its documented after and timeout_ms keys with the pinned Zephyr decoder.
+
+Snapshot and memory
+Each read requests one page, captured by the scan thread after program execution using upstream STruC++ dispatch. The Opta page buffer uses 4,140 bytes at the default 16 entries and 253 bytes per value. Worst-case CBOR accounting further caps each response to fit the SMP writer and configured UART MTU. The SMP handler encodes outside the snapshot lock, and the scan uses a nonblocking lock attempt. Requests time out after five seconds. Pages can carry different scan generations.
+
+Build and tests
+Opta M7 sysbuild using managed Zephyr da0718ca0d52d4f3e3653ead4f8d3a907778ae0b and SDK 1.0.1 passed for the IDE TestProj, a second BuildHost-generated 27-entry fixture, and a PLC with the debug translation unit omitted. MCUboot and the application linked and produced signed-format application images with the existing keyless configuration.
+A host harness using the pinned zcbor and a BuildHost-generated 27-entry project verified all IDs and IEC tags against debug_map.json, page boundaries, generation, raw BOOL/INT/REAL/WSTRING values, request validation, timeout and recovery, response capacity, oversized and unsupported statuses, missing artifacts, and located command 0. This harness used host synchronization stubs.
+
+Live hardware
+No Opta or USB SMP session was available for live verification.
+
+Remaining limitations
+The pinned STruC++ generator tags enum and subrange storage as elementary IEC types and emits custom-capacity strings under the same tags as default-capacity strings. The pinned dispatcher cannot safely read those different C++ wrapper types. Build-time storage checks guard its casts. Incompatible entries retain their ID and IEC type tag and report status 2. The IDE TestProj's LEDSTATE_S enum falls into this category. A future generated-table format change requires revisiting the build-time storage checks.

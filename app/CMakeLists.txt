@@ -58,6 +58,17 @@ if(RETROPLC_GENERATED_DIR)
       "Generated STruCpp configuration class to run")
 
   target_sources(app PRIVATE ${RETROPLC_GENERATED_SOURCES})
+  set(debug_source "${RETROPLC_GENERATED_DIR}/generated_debug.cpp")
+  if(debug_source IN_LIST RETROPLC_GENERATED_SOURCES)
+    include(debug_storage_checks.cmake)
+    retroplc_check_debug_storage("${debug_source}"
+        "${CMAKE_CURRENT_BINARY_DIR}/debug_storage_checks.inc"
+        "${RETROPLC_CONFIGURATION_CLASS}")
+    target_include_directories(app PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+    target_compile_definitions(app PRIVATE RETROPLC_HAS_GENERATED_DEBUG=1)
+  else()
+    message(WARNING "generated_debug.cpp is missing; SMP group 64 command 1 is unavailable")
+  endif()
   target_include_directories(app PRIVATE "${RETROPLC_GENERATED_DIR}")
   target_compile_definitions(app PRIVATE
       RETROPLC_HAS_GENERATED_PROGRAM=1

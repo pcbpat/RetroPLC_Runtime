@@ -9,6 +9,22 @@ config RETROPLC_MGMT_MAX_LOCATED_VARS
 	  PLC scan and returned by MCUmgr group 64, command 0. The response reports
 	  truncation when the generated program contains more entries.
 
+config RETROPLC_MGMT_MAX_DEBUG_ENTRIES
+	int "Maximum entries in an MCUmgr debug page"
+	range 1 64
+	default 16
+	help
+	  Bounds end-of-scan work and the number of slots in the single debug
+	  page buffer. The SMP response capacity may further reduce page size.
+
+config RETROPLC_MGMT_MAX_DEBUG_VALUE_SIZE
+	int "Maximum raw bytes per MCUmgr debug value"
+	range 1 253
+	default 253
+	help
+	  Maximum bytes retained per entry. The default fits the pinned
+	  STruC++ dispatcher's largest wire value (WSTRING).
+
 endmenu
 
 source "Kconfig.zephyr"

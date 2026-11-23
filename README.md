@@ -155,6 +155,38 @@ authenticity protection. Anyone with access to the MCUmgr serial endpoint can
 install firmware; use signing keys before deploying the runtime outside a
 controlled development environment.
 
+## Read symbolic PLC variables
+
+Read MCUmgr group `64`, command `1` with an unsigned `offset` and `limit`.
+The defaults are offset 0 and up to 8 entries. The limit must be positive and
+at most `CONFIG_RETROPLC_MGMT_MAX_DEBUG_ENTRIES` (default 16). Offsets from 0
+through `total` are valid, including the empty page at `offset == total`.
+
+The reply contains `scan`, `total`, `offset`, `count`, `next` and `vars`.
+Each record contains `id` (the element index in array 0), `type` (the
+STruC++ numeric type tag), and `data` (a CBOR byte string in the upstream
+debug format, little-endian for Opta scalar values). If the value cannot be
+read, the record carries a numeric `status` in place of `data`.
+
+| Status | Meaning |
+| --- | --- |
+| 1 | Invalid entry pointer or type tag |
+| 2 | Unsupported storage type or zero-size/unavailable value |
+| 3 | Value exceeds `CONFIG_RETROPLC_MGMT_MAX_DEBUG_VALUE_SIZE` (default 253 bytes) |
+
+Use `next` as the following request's offset until `next == total`.
+The runtime may return fewer entries than requested to fit the SMP response.
+Resolve each entry using `(0, id)` in the project's `debug_map.json`.
+
+The PLC captures a requested page after program execution at a scan boundary.
+Each page is internally coherent, and separate requests can return different
+`scan` generations. The read times out after five seconds if no scan can
+service it. Firmware built without `generated_debug.cpp` returns MCUmgr
+`ENOENT` for command 1. STruC++ v0.6.3 emits some wrappers (such as enum and
+subrange storage and custom-capacity strings) under the same tags as its
+elementary storage types. Those entries are enumerated with status 2 when
+the upstream dispatcher cannot safely read their C++ storage.
+
 ## Platform-owned STruCpp runtime
 
 The headers under `app/src/strucpp-runtime/` are compiled against every
