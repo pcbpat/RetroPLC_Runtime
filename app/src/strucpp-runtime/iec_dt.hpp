@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-or-later WITH STruCpp-runtime-exception
-// Copyright (C) 2025 Autonomy / OpenPLC Project
+// SPDX-License-Identifier: GPL-3.0-only WITH STruCpp-runtime-exception
+// Copyright (c) 2025 Autonomy®
 // This file is part of the STruC++ Runtime Library and is covered by the
 // STruC++ Runtime Library Exception. See COPYING.RUNTIME for details.
 /**
@@ -44,9 +44,9 @@ namespace strucpp {
 // ---------------------------------------------------------------------------
 // Duplicated from iec_time.hpp on purpose: clients sometimes include
 // iec_dt.hpp without iec_time.hpp, and the `DT_FROM_*` helpers below
-// need the unit factor.  C++ tolerates redeclaration of inline
-// constexpr at namespace scope as long as the value matches.
-inline constexpr int64_t DT_NS_PER_DAY = 24LL * 60LL * 60LL * 1000000000LL;
+// need the unit factor.  Plain `constexpr` under C++14, so each header
+// carries its own internal-linkage copy and the values must agree.
+constexpr int64_t DT_NS_PER_DAY = IEC_NS_PER_DAY;
 
 // ---------------------------------------------------------------------------
 // Construction helpers

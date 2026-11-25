@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-or-later WITH STruCpp-runtime-exception
-// Copyright (C) 2025 Autonomy / OpenPLC Project
+// SPDX-License-Identifier: GPL-3.0-only WITH STruCpp-runtime-exception
+// Copyright (c) 2025 Autonomy®
 // This file is part of the STruC++ Runtime Library and is covered by the
 // STruC++ Runtime Library Exception. See COPYING.RUNTIME for details.
 /**
@@ -37,12 +37,12 @@ namespace strucpp {
 // import them for arithmetic that mixes literal scalars with TIME values
 // (e.g. `MUL_TIME(t, 60)` for a 1-minute multiplier without recomputing the
 // constant).
-inline constexpr int64_t NS_PER_US = 1000LL;
-inline constexpr int64_t NS_PER_MS = 1000000LL;
-inline constexpr int64_t NS_PER_S = 1000000000LL;
-inline constexpr int64_t NS_PER_M = 60LL * NS_PER_S;
-inline constexpr int64_t NS_PER_H = 60LL * NS_PER_M;
-inline constexpr int64_t NS_PER_D = 24LL * NS_PER_H;
+constexpr int64_t NS_PER_US = 1000LL;
+constexpr int64_t NS_PER_MS = 1000000LL;
+constexpr int64_t NS_PER_S = 1000000000LL;
+constexpr int64_t NS_PER_M = 60LL * NS_PER_S;
+constexpr int64_t NS_PER_H = 60LL * NS_PER_M;
+constexpr int64_t NS_PER_D = 24LL * NS_PER_H;
 
 // ---------------------------------------------------------------------------
 // Conversion: TIME → integer count of the requested unit (truncated)

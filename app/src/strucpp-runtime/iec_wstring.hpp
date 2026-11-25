@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-or-later WITH STruCpp-runtime-exception
-// Copyright (C) 2025 Autonomy / OpenPLC Project
+// SPDX-License-Identifier: GPL-3.0-only WITH STruCpp-runtime-exception
+// Copyright (c) 2025 Autonomy®
 // This file is part of the STruC++ Runtime Library and is covered by the
 // STruC++ Runtime Library Exception. See COPYING.RUNTIME for details.
 /**
@@ -15,7 +15,6 @@
 
 #include <cstdint>
 #include <cstring>
-#include <algorithm>
 #include "iec_types.hpp"
 
 namespace strucpp {
@@ -369,10 +368,35 @@ public:
     IECWStringVar() noexcept : value_{}, forced_{false}, forced_value_{} {}
     IECWStringVar(const value_type& v) noexcept : value_{v}, forced_{false}, forced_value_{} {}
     IECWStringVar(const char16_t* str) noexcept : value_{str}, forced_{false}, forced_value_{} {}
-    IECWStringVar(const IECWStringVar&) = default;
-    IECWStringVar(IECWStringVar&&) = default;
-    IECWStringVar& operator=(const IECWStringVar&) = default;
-    IECWStringVar& operator=(IECWStringVar&&) = default;
+    /* Forcing semantics, matching IECVar (see iec_var.hpp).
+     *
+     * These cannot be `= default`. A memberwise copy carries `forced_` and
+     * `forced_value_` across, which breaks forcing two ways: assigning FROM a
+     * forced source leaks the flag onto the destination (whose next `set()` is
+     * then silently dropped), and assigning from an unforced source clears a
+     * force the debugger is holding. Generated code assigns every scan, so
+     * either one destroys a force within one cycle -- and STRING forcing is a
+     * first-class debug operation (force_string / unforce_string).
+     *
+     * Construction takes a detached snapshot of the effective value and starts
+     * unforced; assignment routes through set() so the destination keeps its
+     * own forcing state. */
+    IECWStringVar(const IECWStringVar& other) noexcept
+        : value_{other.forced_ ? other.forced_value_ : other.value_},
+          forced_{false},
+          forced_value_{} {}
+    IECWStringVar(IECWStringVar&& other) noexcept
+        : value_{other.forced_ ? other.forced_value_ : other.value_},
+          forced_{false},
+          forced_value_{} {}
+    IECWStringVar& operator=(const IECWStringVar& other) noexcept {
+        set(other.forced_ ? other.forced_value_ : other.value_);
+        return *this;
+    }
+    IECWStringVar& operator=(IECWStringVar&& other) noexcept {
+        set(other.forced_ ? other.forced_value_ : other.value_);
+        return *this;
+    }
 
     // Cross-size assignment (IEC 61131-3: WSTRING types are interoperable, truncation on overflow)
     template<size_t OtherLen>
@@ -462,8 +486,8 @@ using WSTRING_VAR = IECWStringVar<254>;
 using IEC_WSTRING = IECWStringVar<254>;
 
 template<size_t MaxLen>
-inline size_t WLEN(const IECWString<MaxLen>& s) noexcept {
-    return s.length();
+inline INT_t WLEN(const IECWString<MaxLen>& s) noexcept {
+    return static_cast<INT_t>(s.length());
 }
 
 template<size_t MaxLen>
@@ -517,9 +541,9 @@ inline IECWString<MaxLen> WREPLACE(const IECWString<MaxLen>& s1, const IECWStrin
 }
 
 template<size_t MaxLen1, size_t MaxLen2>
-inline size_t WFIND(const IECWString<MaxLen1>& s1, const IECWString<MaxLen2>& s2) noexcept {
+inline INT_t WFIND(const IECWString<MaxLen1>& s1, const IECWString<MaxLen2>& s2) noexcept {
     size_t pos = s1.find(s2);
-    return pos == IECWString<MaxLen1>::npos ? 0 : pos + 1;
+    return pos == IECWString<MaxLen1>::npos ? INT_t{0} : static_cast<INT_t>(pos + 1);
 }
 
 template<size_t MaxLen1, size_t MaxLen2>

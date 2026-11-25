@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-or-later WITH STruCpp-runtime-exception
-// Copyright (C) 2025 Autonomy / OpenPLC Project
+// SPDX-License-Identifier: GPL-3.0-only WITH STruCpp-runtime-exception
+// Copyright (c) 2025 Autonomy®
 // This file is part of the STruC++ Runtime Library and is covered by the
 // STruC++ Runtime Library Exception. See COPYING.RUNTIME for details.
 //
@@ -18,7 +18,7 @@
 // core's `-std` — gnu++14 on every mbed-based core (Nano RP2040 Connect, Nano
 // 33 BLE, Opta, GIGA, Portenta, Edge). To stay safe if/when this header enters
 // that chain, keep it C++14-clean. Do NOT use C++17/20 features unguarded:
-//   * `std::trait_v<T>`               -> `std::trait<T>::value`
+//   * `std::trait_v<T>`                -> `std::trait<T>::value`
 //   * `if constexpr`                  -> SFINAE / tag dispatch
 //   * inline variables / `inline constexpr`
 //   * `auto` non-type template params -> typed NTTPs
